@@ -105,7 +105,6 @@ public class CameraActivity extends Activity {
         return mediaFile;
     }
 
-
     private Camera.PictureCallback mPicture = new Camera.PictureCallback() {
         @Override
         public void onPictureTaken(byte[] data, Camera camera) {
@@ -137,7 +136,6 @@ public class CameraActivity extends Activity {
                 //Convert byte data to bitmap
                 imageView = new ImageView(getApplicationContext());
                 imageView.setImageBitmap(BitmapFactory.decodeByteArray(data,0, data.length));
-                imageView.setRotation(90);
 
                 //preview.removeAllViews();
                 //Add image to screen
@@ -159,6 +157,7 @@ public class CameraActivity extends Activity {
         cameraParameters.setPictureSize(cameraParameters.getSupportedPictureSizes().get(0).width,
                 cameraParameters.getSupportedPictureSizes().get(0).height);
         cameraParameters.setFocusMode(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE);
+        cameraParameters.setRotation(90);
         mCamera.setParameters(cameraParameters);
         CameraPreview mPreview = new CameraPreview(this, mCamera);
         FrameLayout preview = findViewById(R.id.camera_preview);
