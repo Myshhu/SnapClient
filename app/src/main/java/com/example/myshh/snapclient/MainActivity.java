@@ -11,11 +11,11 @@ import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.view.View;
 import android.widget.ArrayAdapter;
+import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.ListView;
 
-import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.Socket;
@@ -23,22 +23,23 @@ import java.util.ArrayList;
 
 public class MainActivity extends AppCompatActivity {
 
-    EditText etMessage;
     EditText etIP;
+    Button btnConnect;
     ListView listViewMessages;
     ImageView imageView;
     Bitmap bitmap;
     ArrayList<String> listMessages = new ArrayList<>();
     ArrayAdapter listAdapter;
     Socket socket;
+    Thread listeningThread;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        etMessage = findViewById(R.id.etMessage);
         etIP = findViewById(R.id.etIP);
+        btnConnect = findViewById(R.id.btnConnect);
         listViewMessages = findViewById(R.id.listView);
         imageView = findViewById(R.id.imageView);
         imageView.setRotation(90);
@@ -48,7 +49,21 @@ public class MainActivity extends AppCompatActivity {
         listViewMessages.setAdapter(listAdapter);
 
         checkPermissions();
+    }
 
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        try {
+            if(StaticSocket.socketToServer != null) {
+                StaticSocket.socketToServer.close();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void btnConnectClick(View v) {
         connectAndListenForMessages();
     }
 
@@ -64,38 +79,49 @@ public class MainActivity extends AppCompatActivity {
 
     //Make connection and listen for messages
     private void connectAndListenForMessages() {
-        new Thread(() -> {
-            while (true) {
-                //Try to connect, reconnect when connection lost
-                try {
-                    this.socket = new Socket(etIP.getText().toString(), 50005);
-                    StaticSocket.socketToServer = socket;
-                    StaticSocket.objectOutputStream = new ObjectOutputStream(socket.getOutputStream());
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-                //While connected
-                while (true) {
-                    Julia julia;
+        if(listeningThread == null) {
+            listeningThread = new Thread(() -> {
+               // while (true) {
+                    //Try to connect, reconnect when connection lost
                     try {
-                        //Read object, new stream for every object, blocks
-                        StaticSocket.objectInputStream = new ObjectInputStream(socket.getInputStream());
-                        //Blocking read
-                        julia = (Julia) StaticSocket.objectInputStream.readObject();
+                        btnConnect.setText("Connecting...");
+                        this.socket = new Socket(etIP.getText().toString(), 50005);
+                        StaticSocket.socketToServer = socket;
+                        StaticSocket.objectOutputStream = new ObjectOutputStream(socket.getOutputStream());
+                        btnConnect.setText("Connected");
                     } catch (Exception e) {
                         e.printStackTrace();
-                        //Try to reconnect if receiving failed
-                        break;
+                        listeningThread = null;
+                        btnConnect.setText("Failed to connect");
                     }
-                    System.out.println("Received object");
-                    listMessages.add(julia.imie);
-                    listMessages.add(julia.nazwisko);
-                    listMessages.add(Integer.toString(julia.numer_telefonu));
-                    this.bitmap = BitmapFactory.decodeByteArray(julia.imageBytes, 0, julia.imageBytes.length);
-                    runOnUiThread(action);
-                }
-            }
-        }).start();
+
+                    while (true) {
+                        MessageObject messageObject;
+                        try {
+                            //Read object, new stream for every object, blocks
+                            StaticSocket.objectInputStream = new ObjectInputStream(socket.getInputStream());
+                            //Blocking read
+                            messageObject = (MessageObject) StaticSocket.objectInputStream.readObject();
+
+                            System.out.println("Received object");
+                            listMessages.add("Command: " + Integer.toString(messageObject.command));
+                            listMessages.add("Name: " + messageObject.name);
+                            BitmapFactory.Options options = new BitmapFactory.Options();
+                            options.inSampleSize = 4;
+                            this.bitmap = BitmapFactory.decodeByteArray(messageObject.imageBytes, 0, messageObject.imageBytes.length, options);
+                            runOnUiThread(action);
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                            btnConnect.setText("Disconnected");
+                            listeningThread = null;
+                            //Try to reconnect if receiving failed
+                            break;
+                        }
+                    }
+               // }
+            });
+            listeningThread.start();
+        }
     }
 
     //Notify adapter
@@ -103,22 +129,10 @@ public class MainActivity extends AppCompatActivity {
         @Override
         public void run() {
             listAdapter.notifyDataSetChanged();
-            //Set received photo
+            //Show received photo
             imageView.setImageBitmap(bitmap);
         }
     };
-
-    //Send message to server
-    public void btnSendClick(View view) {
-        new Thread(()->{
-            try {
-                byte message = Byte.parseByte(etMessage.getText().toString());
-                socket.getOutputStream().write(message);
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }).start();
-    }
 
     public void btnCameraClick(View view) {
         Intent intent = new Intent(this, CameraActivity.class);

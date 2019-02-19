@@ -14,6 +14,7 @@ import android.widget.ImageView;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 
@@ -24,6 +25,8 @@ public class CameraActivity extends Activity {
 
     private Camera mCamera;
     private CameraPreview mPreview;
+    Button btnSwitchCamera;
+    boolean setBackCamera = true;
     FrameLayout preview;
     private ImageView imageView;
     boolean flagCanTakePicture = true;
@@ -33,13 +36,7 @@ public class CameraActivity extends Activity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_camera);
 
-        // Create an instance of Camera
-        mCamera = getCameraInstance();
-
-        // Create our Preview view and set it as the content of our activity.
-        mPreview = new CameraPreview(this, mCamera);
-        preview = findViewById(R.id.camera_preview);
-        preview.addView(mPreview);
+        prepareCameraView(setBackCamera);
 
         Button captureButton = findViewById(R.id.button_capture);
         captureButton.setOnClickListener(
@@ -51,6 +48,28 @@ public class CameraActivity extends Activity {
                     }
                 }
         );
+
+        Button btnSwitchCamera = findViewById(R.id.btnSwitchCamera);
+        btnSwitchCamera.setOnClickListener(
+                v -> {
+                    setBackCamera = !setBackCamera;
+                    releaseCamera();
+                    prepareCameraView(setBackCamera);
+                }
+        );
+    }
+
+    /*@Override
+    protected void onDestroy() {
+        super.onDestroy();
+        releaseCamera();
+    }*/
+
+    private void releaseCamera() {
+        if (mCamera != null) {
+            mCamera.stopPreview();
+            mCamera.release();
+        }
     }
 
     private static File getOutputMediaFile(int type){
@@ -100,11 +119,17 @@ public class CameraActivity extends Activity {
             }
 
             try {
-
                 //Sending byte array to server
-                Julia julia = new Julia();
-                julia.imageBytes = data;
-                StaticSocket.objectOutputStream.writeObject(julia);
+                MessageObject messageObject = new MessageObject();
+                messageObject.imageBytes = data;
+                new Thread(() -> {
+                    try {
+                        StaticSocket.objectOutputStream.writeObject(messageObject);
+                        StaticSocket.objectOutputStream.flush();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }).start();
 
                 FileOutputStream fos = new FileOutputStream(pictureFile);
                 fos.write(data);
@@ -128,16 +153,28 @@ public class CameraActivity extends Activity {
         }
     };
 
+    private void prepareCameraView(boolean setBackCamera){
+        mCamera = getCameraInstance(setBackCamera);
+        Camera.Parameters cameraParameters = mCamera.getParameters();
+        cameraParameters.setPictureSize(cameraParameters.getSupportedPictureSizes().get(0).width,
+                cameraParameters.getSupportedPictureSizes().get(0).height);
+        cameraParameters.setFocusMode(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE);
+        mCamera.setParameters(cameraParameters);
+        CameraPreview mPreview = new CameraPreview(this, mCamera);
+        FrameLayout preview = findViewById(R.id.camera_preview);
+        preview.removeAllViews();
+        preview.addView(mPreview);
+    }
 
     /** A safe way to get an instance of the Camera object. */
-    public static Camera getCameraInstance(){
+    public static Camera getCameraInstance(boolean setBackCamera){
         Camera c = null;
         try {
-            c = Camera.open(); // attempt to get a Camera instance
+            c = Camera.open(setBackCamera ? 0 : 1); // attempt to get a Camera instance
         }
         catch (Exception e){
-            // Camera is not available (in use or does not exist)
+            e.printStackTrace();
         }
-        return c; // returns null if camera is unavailable
+        return c; //Returns null if camera is unavailable
     }
 }
